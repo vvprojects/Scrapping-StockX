@@ -1,0 +1,3 @@
+Test MAE: $47.07
+Test RMSE: $158.53
+Test R²: 0.5263
