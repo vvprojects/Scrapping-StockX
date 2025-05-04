@@ -1,0 +1,16 @@
+feature,importance
+brand_ptr_zscore,30.766586808956255
+brand_price_zscore,14.791722558438362
+days_since_release,12.801237268534292
+model_processed,7.6298992752347505
+brand,7.111333077882666
+brand_ptr_std,6.591761071559921
+retail_price,5.175111090997536
+brand_price_std,4.094331320994101
+log_retail_price,4.006164726944997
+brand_price_mean,2.2729997047315162
+brand_ptr_mean,1.8071489322659706
+release_month,1.431891740706023
+has_collaboration,1.1571942773296118
+release_quarter,0.3626181454240485
+collab_type,0.0
