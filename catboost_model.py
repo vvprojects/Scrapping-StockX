@@ -9,6 +9,8 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import seaborn as sns
 from bs4 import BeautifulSoup
+import pickle
+from sklearn.decomposition import PCA
 
 def clean_text(text):
     """Clean text by removing HTML tags and normalizing whitespace"""
@@ -47,123 +49,89 @@ def extract_collaboration_info(row):
     if pd.isna(row['description']) and pd.isna(row['title']):
         return {
             'has_collab': 0,
-            'collab_brand': 'none',
-            'collab_type': 'none'
+            'collab_brands': [],
+            'collab_count': 0,
+            'highest_tier': 0
         }
     
     # Combine title and description for better collaboration detection
     text = f"{str(row['title'])} {str(row['description'])}"
     text = clean_text(text)
     
-    # Only use specified collaboration patterns
-    collab_patterns = [
-        r'collaboration',
-        r'collab',
-        r'partnership',
-        r' x ',  # Common separator in titles    
-    ]
-    
-    # Collaborator tiers based on cultural impact
-    premium_collaborators = {
+    # List of collaborator patterns and their tiers
+    collaborators = {
         'michael jordan': 3,
-        'jordan': 3,
-        'virgil abloh': 3,
         'off-white': 3,
-        'kanye west': 3,
         'yeezy': 3,
+        'clot': 3,
         'fragment': 3,
         'supreme': 3,
         'travis scott': 3,
-        'travis': 3,
-        'cactus jack': 3,
         'drake': 3,
-        'ovo': 3,
-        'fear of god': 3,
-        'fog': 3,
-        'sacai': 3,
-        'union': 3,
-        'a ma maniere': 3,
-        'aime leon dore': 3,
-        'alexander wang': 3,
-        'ambush': 3,
-        'atmos': 3,
-        'bape': 3,
-        'billionaire boys club': 3,
-        'bbc': 3,
-        'cdg': 3,
-        'comme des garcons': 3,
-        'dior': 3,
-        'fragment': 3,
-        'kaws': 3,
-        'kenzo': 3,
-        'mastermind': 3,
-        'mastermind japan': 3,
-        'medicom': 3,
-        'neighborhood': 3,
-        'nbhd': 3,
-        'nike sb': 3,
-        'parra': 3,
-        'patta': 3,
-        'stussy': 3,
-        'undefeated': 3,
-        'wtaps': 3,
+        'louis vuitton': 3,
         
-        'allen iverson': 2,
+        'ovo': 2,
+        'fear of god': 2,
+        'sacai': 2,
+        'union': 2,
+        'a ma maniere': 2,
+        'aime leon dore': 2,
+        'alexander wang': 2,
+        'ambush': 2,
+        'atmos': 2,
+        'bape': 2,
+        'billionaire boys club': 2,
+        'comme des garcons': 2,
+        'dior': 2,
+        'kaws': 2,
+        'kenzo': 2,
+        'mastermind': 2,
+        'medicom': 2,
+        'neighborhood': 2,
+        'nbhd': 2,
+        'parra': 2,
+        'patta': 2,
+        'stussy': 2,
         'kobe bryant': 2,
         'lebron james': 2,
         'pharrell williams': 2,
-        'tinker hatfield': 2,
-        'andre agassi': 2,
-        'gucci': 2,
-        'louis vuitton': 2,
-        'lv': 2,
         'prada': 2,
         'balenciaga': 2,
-        'adidas yeezy': 2,
-        
-        'sheryl swoopes': 1,
-        'ken griffey jr': 1
+        'gucci': 2,
+        'undefeated': 1
     }
     
-    # Check for collaboration
-    has_collab = 0
-    collab_brand = 'none'
-    collab_type = 'none'
+    # Find all collaborations
+    found_collabs = []
+    highest_tier = 0
     
-    # First check for explicit collaboration mentions
-    for pattern in collab_patterns:
-        if re.search(pattern, text, re.IGNORECASE):
-            # If we find a collaboration pattern, check for specific collaborators
-            for brand, tier in premium_collaborators.items():
-                if brand in text.lower():
-                    has_collab = 1
-                    collab_brand = brand
-                    collab_type = f'tier_{tier}'
-                    break
-            if has_collab:
-                break
+    # First check in title (higher priority)
+    title = str(row['title']).lower()
+    for collab, tier in collaborators.items():
+        if collab in title:
+            if collab not in found_collabs:  # Avoid duplicates
+                found_collabs.append(collab)
+                highest_tier = max(highest_tier, tier)
     
-    # If no collaboration found but we see a premium collaborator, it might be a signature series
-    if not has_collab:
-        for brand, tier in premium_collaborators.items():
-            if brand in text.lower():
-                # Check if it's likely a signature series (e.g., "Jordan 1", "Kobe 6")
-                if re.search(rf'{brand}\s+\d+', text, re.IGNORECASE):
-                    has_collab = 1
-                    collab_brand = brand
-                    collab_type = f'tier_{tier}'
-                    break
+    # Then check in description
+    desc = str(row['description']).lower()
+    for collab, tier in collaborators.items():
+        if collab in desc:
+            if collab not in found_collabs:  # Avoid duplicates
+                found_collabs.append(collab)
+                highest_tier = max(highest_tier, tier)
     
     return {
-        'has_collab': has_collab,
-        'collab_brand': collab_brand,
-        'collab_type': collab_type
+        'has_collab': 1 if found_collabs else 0,
+        'collab_brands': found_collabs,
+        'collab_count': len(found_collabs),
+        'highest_tier': highest_tier
     }
 
 def extract_size_category(title):
     """Extract size category from title"""
     if pd.isna(title):
-        return 'men'
+        return 'Men'
     
     title = str(title).lower()
     
@@ -173,7 +141,8 @@ def extract_size_category(title):
         'Women': ['women', 'womens', 'wmns', 'wmn'],
         'PS': ['ps', 'preschool', 'little kids'],
         'TD': ['td', 'toddler'],
-        'men': []  # Default category
+        'Infants': ['infant', 'infants'],
+        'Men': []  # Default category
     }
     
     # Check for each category
@@ -182,7 +151,7 @@ def extract_size_category(title):
             if keyword in title:
                 return category
     
-    return 'men'  # Default to men if no category found
+    return 'Men'  # Default to men if no category found
 
 def create_success_score(row):
     """Create a composite success score for sneakers"""
@@ -212,19 +181,40 @@ def create_success_score(row):
         # Use sigmoid function for smoother profit scoring
         profit_score = 1 / (1 + np.exp(-profit_potential))
     
-    # Combine scores with weights
+    # Combine scores with weights by avg of PCA_weights,  Correlation_weights,  Regression_weights,  Ensemble_weights
     final_score = (
-        0.15 * premium_score +
-        0.15 * sales_score +
-        0.3 * volatility_score +
-        0.4 * profit_score
+        0.357 * premium_score +
+        0.123 * sales_score +
+        0.088 * volatility_score +
+        0.432 * profit_score
     )
+
     
     return final_score * 100  # Scale to 0-100
 
 def prepare_features(df):
     """Prepare features for the model"""
     print("Preparing features...")
+    
+    # Load image features
+    # try:
+    #     with open('image_features_efficientnet.pkl', 'rb') as f:
+    #         image_features = pickle.load(f)
+    #         print(f"Loaded image features with shape: {image_features.shape}")
+            
+    #         # Apply PCA to reduce dimensionality
+    #         pca = PCA(n_components=50)  # Reduce to 50 components
+    #         scaler = StandardScaler()
+    #         image_features_scaled = scaler.fit_transform(image_features)
+    #         image_features_pca = pca.fit_transform(image_features_scaled)
+    #         print(f"Explained variance ratio: {sum(pca.explained_variance_ratio_):.3f}")
+            
+    #         # Create image feature columns
+    #         for i in range(image_features_pca.shape[1]):
+    #             df[f'img_feature_{i}'] = image_features_pca[:, i]
+    # except FileNotFoundError:
+    #     print("Warning: Image features not found. Run image_feature_extraction.py first.")
+    #     image_features = None
     
     # Clean text and extract retail prices
     df['clean_description'] = df['description'].apply(clean_text)
@@ -236,17 +226,12 @@ def prepare_features(df):
     # Extract collaboration information
     collab_info = df.apply(extract_collaboration_info, axis=1)
     df['has_collaboration'] = collab_info.apply(lambda x: x['has_collab'])
-    df['collab_brand'] = collab_info.apply(lambda x: x['collab_brand'])
-    df['collab_type'] = collab_info.apply(lambda x: x['collab_type'])
-    
-    # Extract size category
-    df['size_category'] = df['title'].apply(extract_size_category)
+    df['collab_count'] = collab_info.apply(lambda x: x['collab_count'])
+    df['collab_tier'] = collab_info.apply(lambda x: x['highest_tier'])
+    df['collab_brands'] = collab_info.apply(lambda x: ','.join(x['collab_brands']) if x['collab_brands'] else 'none')
     
     # Process dates
     df['release_date'] = pd.to_datetime(df['release_date'], errors='coerce')
-    # df['days_since_release'] = ((datetime.now() - df['release_date']).dt.days).where(lambda x: x < 3650)  
-    # df = df.dropna(subset=['days_since_release'])
-    
     df['release_month'] = df['release_date'].dt.month
     df['release_quarter'] = df['release_date'].dt.quarter
     
@@ -255,12 +240,13 @@ def prepare_features(df):
     
     # Brand statistics
     brand_stats = df.groupby('brand').agg({
-        'annual_avg_price': ['mean', 'std'],
-        'annual_price_premium': ['mean', 'std']
+        'retail_price': ['mean', 'std', 'median'],
+        'annual_avg_price': ['mean', 'std', 'median']
     }).reset_index()
     
-    brand_stats.columns = ['brand', 'brand_price_mean', 'brand_price_std', 
-                          'brand_ptr_mean', 'brand_ptr_std']
+    brand_stats.columns = ['brand', 
+                          'brand_retail_mean', 'brand_retail_std', 'brand_retail_median',
+                          'brand_resell_mean', 'brand_resell_std', 'brand_resell_median']
     
     df = df.merge(brand_stats, on='brand', how='left')
     
@@ -271,15 +257,11 @@ def prepare_features(df):
         model = str(row['model']).lower()
         brand = str(row['brand']).lower()
         
-        # Remove brand name from model name
-        if brand in model:
-            model = model.replace(brand, '').strip()
-        
-        # Remove common prefixes/suffixes
-        prefixes = ['nike', 'adidas', 'jordan', 'new balance', 'puma', 'reebok', 'converse']
-        for prefix in prefixes:
-            if model.startswith(prefix):
-                model = model[len(prefix):].strip()
+        # Remove brand name and collaborator names
+        model = model.replace(brand, '').strip()
+        for collab in str(row['collab_brands']).lower().split(','):
+            if collab != 'none':
+                model = model.replace(collab, '').strip()
         
         # Clean up any remaining special characters and extra spaces
         model = re.sub(r'[^\w\s-]', '', model)
@@ -290,9 +272,30 @@ def prepare_features(df):
     # Apply model name cleaning
     df['model_processed'] = df.apply(clean_model_name, axis=1)
     
-    # Group rare models
-    model_counts = df['model_processed'].value_counts()
-    df['model_processed'] = df['model_processed'].apply(lambda x: x if x in model_counts[model_counts >= 1].index else 'Other')
+    # Model statistics
+    model_stats = df.groupby('model_processed').agg({
+        'retail_price': ['mean', 'std', 'median', 'count'],
+        'annual_avg_price': ['mean', 'std', 'median']
+    }).reset_index()
+    
+    model_stats.columns = ['model_processed', 
+                          'model_retail_mean', 'model_retail_std', 'model_retail_median', 'model_count',
+                          'model_resell_mean', 'model_resell_std', 'model_resell_median']
+    
+    # Only keep models with sufficient data
+    popular_models = model_stats[model_stats['model_count'] >= 5]['model_processed']
+    df['model_processed'] = df['model_processed'].apply(lambda x: x if x in popular_models.values else 'Other')
+    
+    # Merge model stats
+    df = df.merge(model_stats, on='model_processed', how='left')
+    
+    # Calculate price ratios
+    df['retail_to_brand_mean'] = df['retail_price'] / df['brand_retail_mean']
+    df['model_resell_mean_to_brand_mean'] = df['model_resell_mean'] / df['brand_resell_mean']
+    df['retail_to_model_mean'] = df['retail_price'] / df['model_retail_mean']
+    
+    # Extract size category
+    df['size_category'] = df['title'].apply(extract_size_category)
     
     # Create success score
     # df['success_score'] = df.apply(create_success_score, axis=1)
@@ -303,17 +306,34 @@ def prepare_features(df):
     feature_columns = [
         # Basic features
         'retail_price', 
-        # 'days_since_release',
         'release_month', 'release_quarter',
-        'log_retail_price', 'has_collaboration',
+        'log_retail_price',
         
-        # Brand and model features
-        'brand_price_mean', 'brand_price_std', 'brand_ptr_mean', 'brand_ptr_std',
+        # Collaboration features
+        'has_collaboration',
+        'collab_count',
+        'collab_tier',
         
-        # Categorical features (for CatBoost)
-        'brand', 'model_processed', 'collab_type', 'size_category',
-        # 'clean_description'
+        # Brand statistics
+        'brand_retail_mean', 'brand_retail_std', 'brand_retail_median',
+        'brand_resell_mean', 'brand_resell_std', 'brand_resell_median',
+        
+        # Model statistics
+        'model_retail_mean', 'model_retail_std', 'model_retail_median',
+        'model_resell_mean', 'model_resell_std', 'model_resell_median',
+        'model_count',
+        
+        # Price ratios
+        'retail_to_brand_mean', 'model_resell_mean_to_brand_mean',
+        'retail_to_model_mean',
+        
+        # Categorical features
+        'brand', 'model_processed', 'collab_brands', 'size_category'
     ]
+    
+    # Add image features if available
+    # if image_features is not None:
+    #     feature_columns.extend([f'img_feature_{i}' for i in range(50)])
     
     # Ensure all numeric columns have valid values
     for col in feature_columns:
@@ -339,7 +359,7 @@ def train_catboost_model(df, feature_columns, target_column='resell_price'):
     
     # Define categorical features
     cat_features = [
-        'brand', 'model_processed', 'collab_type', 'size_category'
+        'brand', 'model_processed', 'collab_brands', 'size_category'
     ]
     
     # Initialize and train model
@@ -352,7 +372,7 @@ def train_catboost_model(df, feature_columns, target_column='resell_price'):
         eval_metric='R2',
         random_seed=42,
         # text_features= ['clean_description'],
-        verbose=100
+        verbose=20
     )
     
     model.fit(
@@ -371,8 +391,8 @@ def train_catboost_model(df, feature_columns, target_column='resell_price'):
     r2 = r2_score(y_test, y_pred)
     
     print(f"\nModel Performance:")
-    print(f"MAE: {mae:.2f}$")
-    print(f"RMSE: {rmse:.2f}$")
+    print(f"MAE: {mae:.2f}")
+    print(f"RMSE: {rmse:.2f}")
     print(f"R²: {r2:.4f}")
     
     # Feature importance plot
